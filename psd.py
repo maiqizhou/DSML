@@ -1,62 +1,74 @@
-import numpy as np
-from matplotlib import pyplot as plt
-from scipy.ndimage import gaussian_filter1d
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-SMOOTHING_SIGMA = 20
+SMOOTHING_SIGMA = 20  
 
-#compute power spectra distances and average across all dimensions
-def power_spectrum_error(x_gen, x_true):
-    pse_errors_per_dim = power_spectrum_error_per_dim(x_gen, x_true)
-    return np.array(pse_errors_per_dim).mean(axis=0)
+# Ensure calculations happen on the correct device
+device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
 
 def compute_power_spectrum(x):
-    fft_real = np.fft.rfft(x)
-    ps = np.abs(fft_real)**2
-    ps_smoothed = gaussian_filter1d(ps, SMOOTHING_SIGMA)
-    return ps_smoothed
+    """
+    Computes the power spectrum of a given time series batch using FFT in PyTorch.
+    Falls back to CPU since FFT is not supported on MPS.
+    """
+    x_cpu = x.to("cpu")  
+    fft_real = torch.fft.rfft(x_cpu, dim=1)  
+    ps = torch.abs(fft_real) ** 2  
+    ps = ps / ps.sum(dim=1, keepdim=True) 
 
-def get_average_spectrum(x):
-    x_ = (x - x.mean()) / x.std()  # normalize individual trajectories
-    spectrum = compute_power_spectrum(x_)
-    return spectrum / spectrum.sum()
-
-def power_spectrum_error_per_dim(x_gen, x_true):
-    assert x_true.shape[1] == x_gen.shape[1]
-    assert x_true.shape[2] == x_gen.shape[2]
-    dim_x = x_gen.shape[2]
-    pse_per_dim = []
-    for dim in range(dim_x):
-        spectrum_true = get_average_spectrum(x_true[:, :, dim])
-        spectrum_gen = get_average_spectrum(x_gen[:, :, dim])
-        hd = hellinger_distance(spectrum_true, spectrum_gen)
-        pse_per_dim.append(hd)
-    return pse_per_dim
+    return ps.to("mps") 
 
 def hellinger_distance(p, q):
-    return 1 / np.sqrt(2) * np.sqrt(np.sum((np.sqrt(p) - np.sqrt(q))**2))
-
-#functions for smoothing power spectra with a Gaussian kernel
-def kernel_smoothen(data, kernel_sigma=1):
     """
-    Smoothen data with Gaussian kernel
-    @param kernel_sigma: standard deviation of gaussian, kernel_size is adapted to that
-    @return: internal data is modified but nothing returned
+    Computes the Hellinger distance between two probability distributions using PyTorch.
     """
-    kernel = get_kernel(kernel_sigma)
-    data_final = data.copy()
-    data_conv = np.convolve(data[:], kernel)
-    pad = int(len(kernel) / 2)
-    data_final[:] = data_conv[pad:-pad]
-    data = data_final
-    return data
+    return torch.sqrt(torch.sum((torch.sqrt(p) - torch.sqrt(q)) ** 2, dim=1)) / torch.sqrt(torch.tensor(2.0, device=device))
 
-def gauss(x, sigma=1):
-    return 1 / np.sqrt(2 * np.pi * sigma ** 2) * np.exp(-1 / 2 * (x / sigma) ** 2)
+def power_spectrum_error_per_dim(x_gen, x_true):
+    """
+    Computes Power Spectrum Distance for each variable (x, y, z).
+    """
+    assert x_true.shape[1] == x_gen.shape[1]  
+    assert x_true.shape[2] == x_gen.shape[2]  
+    
+    dim_x = x_gen.shape[2]  
+    pse_per_dim = []
 
-def get_kernel(sigma):
-    size = sigma * 10 + 1
-    kernel = list(range(size))
-    kernel = [float(k) - int(size / 2) for k in kernel]
-    kernel = [gauss(k, sigma) for k in kernel]
-    kernel = [k / np.sum(kernel) for k in kernel]
-    return kernel
+    for dim in range(dim_x):
+        ps_true = compute_power_spectrum(x_true[:, :, dim]) 
+        ps_pred = compute_power_spectrum(x_gen[:, :, dim])  
+        hd = hellinger_distance(ps_true, ps_pred).mean()  
+        pse_per_dim.append(hd)
+
+    return torch.stack(pse_per_dim).mean().to(device)  
+
+def power_spectrum_loss(y_true, y_pred):
+    """
+    Computes the Power Spectrum Distance (PSD) Loss by averaging Hellinger distances 
+    over all three variables (x, y, z).
+    """
+    return power_spectrum_error_per_dim(y_pred, y_true)
+
+def correlation_loss(y_true, y_pred):
+    """
+    Computes correlation loss for each of the 3 predicted variables (x, y, z).
+    """
+    y_true_mean = y_true.mean(dim=1, keepdim=True)
+    y_pred_mean = y_pred.mean(dim=1, keepdim=True)
+
+    y_true_std = y_true.std(dim=1, keepdim=True) + 1e-6
+    y_pred_std = y_pred.std(dim=1, keepdim=True) + 1e-6
+
+    corr = ((y_true - y_true_mean) * (y_pred - y_pred_mean)).mean(dim=1) / (y_true_std * y_pred_std)
+    return (1 - corr.mean()).to(device)  
+
+def combined_loss(y_true, y_pred, alpha=1.0, beta=0.5, gamma=0.1):
+    """
+    Computes the final loss function combining MSE, PSD, and correlation loss.
+    """
+    loss_mse = nn.MSELoss()(y_pred, y_true)
+    loss_psd = power_spectrum_loss(y_true, y_pred)
+    # loss_corr = correlation_loss(y_true, y_pred)
+    total_loss = alpha * loss_mse + beta * loss_psd 
+    return total_loss.to(device)  
