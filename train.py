@@ -2,16 +2,14 @@ import torch
 import numpy as np
 import torch.optim as optim
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 
 from dataset import TransformerDataset
 from transformer_timeseries import TimeSeriesTransformer
 import utils
-from psd import combined_loss
 
 
 # 1. Load Data
-
 data_path = "finalProject/DSML/lorenz63_on0.05_train.npy"
 data = np.load(data_path)
 
@@ -21,8 +19,7 @@ print("Data shape:", data_tensor.shape)  # Expected (100000, 3)
 
 
 # 2. Define Sequence Lengths & Indexing
-
-enc_seq_len = 40  # Encoder input length
+enc_seq_len = 30  # Encoder input length
 dec_seq_len = 20  # Decoder input length
 target_seq_len = 20  # Prediction length
 step_size = 1  
@@ -37,48 +34,60 @@ indices = utils.get_indices_input_target(
     target_len=target_seq_len
 )
 print(f"Generated {len(indices)} training sequences.")
-print(indices[:5])
 
-# 3. Create Dataset & DataLoader
+# **Split indices into 80% training and 20% validation**
+split_idx = int(0.8 * len(indices))
+train_indices = indices[:split_idx]
+val_indices = indices[split_idx:]
 
-dataset = TransformerDataset(
+# **Create Train & Validation Datasets**
+train_dataset = TransformerDataset(
     data=data_tensor,
-    indices=indices,
+    indices=train_indices,
     enc_seq_len=enc_seq_len,
     dec_seq_len=dec_seq_len,
     target_seq_len=target_seq_len
 )
 
-batch_size = 32
-dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
+val_dataset = TransformerDataset(
+    data=data_tensor,
+    indices=val_indices,
+    enc_seq_len=enc_seq_len,
+    dec_seq_len=dec_seq_len,
+    target_seq_len=target_seq_len
+)
 
-src, trg, trg_y = next(iter(dataloader))
+# **Create Train & Validation Dataloaders**
+batch_size = 128
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=True)
+val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0, pin_memory=True)
 
-# 4. Initialize Model
+# **Test Data Load**
+src, trg, trg_y = next(iter(train_loader))
 
+
+# 3. Initialize Model
 model = TimeSeriesTransformer(
     input_size=3,
     dec_seq_len=dec_seq_len,
     batch_first=True,
 )
 
-# Select device: MPS (Mac) or CPU
+# **Select device: MPS (Mac) or CPU**
 device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
 model.to(device)
 print(f"Model initialized on: {device}")
 
 
-# 5. Define Loss & Optimizer
-
-criterion = combined_loss
-optimizer = optim.Adam(model.parameters(), lr=0.01)
+# 4. Define Loss & Optimizer
+criterion = nn.MSELoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 # Gradient Clipping
 clip_value = 1.0
 
 
-# 6. Training Loop
-
+# 5. Training Loop
 num_epochs = 10  
 save_path = "fine_tuned_transformer.pth"
 
@@ -86,9 +95,9 @@ print("\nStarting training...")
 
 for epoch in range(num_epochs):
     model.train()
-    total_loss = 0
+    total_train_loss = 0
 
-    for  src, trg, trg_y in dataloader:
+    for src, trg, trg_y in train_loader:
         # Move data to device
         src, trg, trg_y = src.to(device), trg.to(device), trg_y.to(device)
 
@@ -96,10 +105,10 @@ for epoch in range(num_epochs):
 
         # Create masks
         src_mask = utils.generate_square_subsequent_mask(target_seq_len, enc_seq_len).to(device)
-        trg_mask = utils.generate_square_subsequent_mask(target_seq_len, target_seq_len).to(device)
+        tgt_mask = utils.generate_square_subsequent_mask(target_seq_len, target_seq_len).to(device)
 
         # Forward pass
-        output = model(src, trg, src_mask, trg_mask)
+        output = model(src, trg, src_mask=src_mask, tgt_mask=tgt_mask)
 
         # Ensure output shape matches target shape
         if output.shape != trg_y.shape:
@@ -107,35 +116,56 @@ for epoch in range(num_epochs):
             output = output[:, : trg_y.shape[1], :]
 
         # Compute loss
-        loss = criterion(output.to(device), trg_y.to(device), alpha=1.0, beta=0.5, gamma=0.1)
+        loss = criterion(output, trg_y)
         loss.backward()  # Backpropagation
 
         # Gradient Clipping (to prevent exploding gradients)
         torch.nn.utils.clip_grad_norm_(model.parameters(), clip_value)
 
         optimizer.step()  # Update weights
-        model.eval()
-        total_loss += loss.item()
+        total_train_loss += loss.item()
 
-    avg_loss = total_loss / len(dataloader)
-    print(f"Epoch {epoch+1}/{num_epochs}, Loss: {avg_loss:.6f}")
+    avg_train_loss = total_train_loss / len(train_loader)
+
+    # **Validation Loop (No Gradient Update)**
+    model.eval()
+    total_val_loss = 0
+
+    with torch.no_grad():
+        for src, trg, trg_y in val_loader:
+            src, trg, trg_y = src.to(device), trg.to(device), trg_y.to(device)
+
+            src_mask = utils.generate_square_subsequent_mask(target_seq_len, enc_seq_len).to(device)
+            tgt_mask = utils.generate_square_subsequent_mask(target_seq_len, target_seq_len).to(device)
+
+            output = model(src, trg, src_mask=src_mask, tgt_mask=tgt_mask)
+
+            if output.shape != trg_y.shape:
+                output = output[:, :trg_y.shape[1], :]
+
+            val_loss = criterion(output, trg_y)
+            total_val_loss += val_loss.item()
+
+    avg_val_loss = total_val_loss / len(val_loader)
+
+    print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {avg_train_loss:.6f}, Val Loss: {avg_val_loss:.6f}")
+
+print("\nTraining complete!")
 
 
-# 7. Save the Trained Model
-
+# 6. Save the Trained Model
 torch.save(model.state_dict(), save_path)
-print(f"\nTraining complete, model saved as {save_path}")
+print(f"Model saved as {save_path}")
 
 
-# 8. Quick Validation
-
+# 7. Quick Validation
 print("\nRunning quick validation...")
 model.eval()
 
 with torch.no_grad():
-    src, trg, trg_y = dataset[0]  # Get the first sample
+    src, trg, trg_y = val_dataset[0]  # Get the first sample
     src, trg = src.unsqueeze(0).to(device), trg.unsqueeze(0).to(device)  # Add batch dimension
 
     prediction = model(src, trg)  # Generate prediction
 
-print(f"Validation complete, output shape: {prediction.shape}")  # Expected (1, 10, 3)
+print(f"Validation complete, output shape: {prediction.shape}")  # Expected (1, 20, 3)
