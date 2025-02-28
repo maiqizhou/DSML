@@ -19,9 +19,9 @@ print("Data shape:", data_tensor.shape)  # Expected (100000, 3)
 
 
 # 2. Define Sequence Lengths & Indexing
-enc_seq_len = 30  # Encoder input length
-dec_seq_len = 20  # Decoder input length
-target_seq_len = 20  # Prediction length
+enc_seq_len = 20  # Encoder input length
+dec_seq_len = 10  # Decoder input length
+target_seq_len = 10  # Prediction length
 step_size = 1  
 forecast_horizon = 1  
 
@@ -81,7 +81,7 @@ print(f"Model initialized on: {device}")
 
 # 4. Define Loss & Optimizer
 criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
 # Gradient Clipping
 clip_value = 1.0
