@@ -128,7 +128,7 @@ def get_indices_entire_sequence(data: pd.DataFrame, window_size: int, step_size:
             subseq_first_idx += step_size
             
             subseq_last_idx += step_size
-
+            
         return indices
 
 
@@ -157,7 +157,7 @@ def read_data(data_dir: Union[str, Path] = "data",
     if len(csv_files) > 1:
         raise ValueError("data_dir contains more than 1 csv file. Must only contain 1")
     elif len(csv_files) == 0:
-	raise ValueError("data_dir must contain at least 1 csv file.")
+        raise ValueError("data_dir must contain at least 1 csv file.")
 
     data_path = csv_files[0]
 
