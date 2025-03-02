@@ -44,17 +44,18 @@ class TimeSeriesTransformer(nn.Module):
         input_size: int,
         dec_seq_len: int,
         batch_first: bool,
+        num_predicted_features: int,
         out_seq_len: int=58,
         dim_val: int=1024,  
-        n_encoder_layers: int=6,
+        n_encoder_layers: int=4,
         n_decoder_layers: int=4,
         n_heads: int=8,
         dropout_encoder: float=0.2, 
         dropout_decoder: float=0.2,
         dropout_pos_enc: float=0.1,
         dim_feedforward_encoder: int=2048,
-        dim_feedforward_decoder: int=2048,
-        num_predicted_features: int=3
+        dim_feedforward_decoder: int=2048
+        
         ): 
 
         """
