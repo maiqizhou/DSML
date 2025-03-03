@@ -1,10 +1,20 @@
-# How to code a Transformer model for time series forecasting in PyTorch
-This project utilizes two datasets, Lorenz-63 and Lorenz-96, for time series forecasting using a Transformer model.
+# Lorenz System Time Series Forecasting with Transformer
+This project implements a Transformer model for time series forecasting on two classic chaotic systems: Lorenz-63 and Lorenz-96.
 
-The train.py shows how to train the transformer.
+### Scripts Overview
+train.py: Trains the Transformer model on the Lorenz datasets.
 
-The psd.py is used to compares the ground truth and generated data using Power Spectral Density (PSD).
+psd.py: Evaluates model performance by comparing ground truth and generated data using Power Spectral Density (PSD).
 
-The lorenzinf.py is used to performs inference on the trained model and generates plots.
+lorenzinf.py: Performs inference using the trained model.
 
-🚀 Usage: Run train.py to train the model, then use lorenzinf.py for predictions and visualization. Finally, use psd.py to evaluate performance.
+plot.py: Visualizes the results.
+
+### Usage
+Train the model by running train.py.
+
+Generate predictions using lorenzinf.py.
+
+Visualize results with plot.py.
+
+Evaluate performance using psd.py.
