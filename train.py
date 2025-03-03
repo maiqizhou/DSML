@@ -10,13 +10,11 @@ import utils
 
 
 # 1. Load Data
-data_path = "finalProject/DSML/lorenz63_on0.05_train.npy"
+data_path = "finalProject/DSML/lorenz96_on0.05_train.npy"
 data = np.load(data_path)
 
 # Convert to PyTorch tensor
 data_tensor = torch.tensor(data, dtype=torch.float32)
-print("Data shape:", data_tensor.shape)  # Expected (100000, 3)
-
 
 # 2. Define Sequence Lengths & Indexing
 enc_seq_len = 20  # Encoder input length
@@ -64,11 +62,11 @@ val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_w
 
 # **Test Data Load**
 src, trg, trg_y = next(iter(train_loader))
-
+print(f"Train data shapes: {src.shape}, {trg.shape}, {trg_y.shape}")
 
 # 3. Initialize Model
 model = TimeSeriesTransformer(
-    input_size=3,
+    input_size=src.shape[2],
     dec_seq_len=dec_seq_len,
     batch_first=True,
 )
@@ -81,15 +79,15 @@ print(f"Model initialized on: {device}")
 
 # 4. Define Loss & Optimizer
 criterion = nn.MSELoss()
-optimizer = optim.Adam(model.parameters(), lr=0.0001)
+optimizer = optim.Adam(model.parameters(), lr=0.00007)
 
 # Gradient Clipping
 clip_value = 1.0
 
 
 # 5. Training Loop
-num_epochs = 10  
-save_path = "fine_tuned_transformer.pth"
+num_epochs = 20  
+save_path = "transformer_lorenz96(epoch=20, lr=0.00007).pth"
 
 print("\nStarting training...")
 
@@ -142,7 +140,7 @@ for epoch in range(num_epochs):
 
             if output.shape != trg_y.shape:
                 output = output[:, :trg_y.shape[1], :]
-
+            # Rescale output and target
             val_loss = criterion(output, trg_y)
             total_val_loss += val_loss.item()
 
