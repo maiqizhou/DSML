@@ -51,7 +51,7 @@ initial_sequence = test_data[:enc_seq_len]
 initial_tensor = torch.tensor(initial_sequence, dtype=torch.float32)
 
 # Run continuous inference
-model_path = "finalProject/DSML/transformer_lorenz63(epoch=10, lr=0.0001).pth"
+model_path = "transformer_lorenz63(epoch=10, lr=0.0001).pth"
 save_path = "generated_lorenz63(epoch=10, lr=0.0001).npy"
 predicted_output = run_continuous_inference(model_path, initial_tensor, total_pred_steps, enc_seq_len)
 

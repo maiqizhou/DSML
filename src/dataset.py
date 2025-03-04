@@ -47,8 +47,6 @@ class TransformerDataset(Dataset):
 
         self.data = data
 
-        print("From get_src_trg: data size = {}".format(data.size()))
-
         self.enc_seq_len = enc_seq_len
 
         self.dec_seq_len = dec_seq_len
@@ -84,6 +82,8 @@ class TransformerDataset(Dataset):
             dec_seq_len=self.dec_seq_len,
             target_seq_len=self.target_seq_len
             )
+        if torch.isnan(trg_y).any():
+            print(f"NaN detected in trg_y at index {index}")
 
         return src, trg, trg_y
     
